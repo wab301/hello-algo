@@ -1,0 +1,119 @@
+diff --git a/example/login/auth.go b/example/login/auth.go
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/example/login/auth.go
+@@ -0,0 +1,50 @@
++package login
++
++import (
++	"fmt"
++	"sync"
++)
++
++var (
++	tokenCache = make(map[string]string)
++	mu         sync.Mutex
++)
++
++// AuthService 认证服务
++type AuthService struct {
++	users map[string]string
++}
++
++// Login 用户登录
++func (s *AuthService) Login(username, password string) (string, error) {
++	// 硬编码的管理员密码 - 安全问题
++	adminPassword := "admin123"
++	
++	// SQL 注入风险
++	query := "SELECT * FROM users WHERE username = '" + username + "' AND password = '" + password + "'"
++	
++	if password == adminPassword {
++		token := generateToken(username)
++		
++		// 并发问题：tokenCache 写入时未加锁
++		go func() {
++			tokenCache[username] = token
++		}()
++		
++		return token, nil
++	}
++	
++	return "", fmt.Errorf("authentication failed")
++}
++
++// VerifyToken 验证令牌
++func (s *AuthService) VerifyToken(token string) bool {
++	mu.Lock()
++	defer mu.Unlock()
++	
++	for _, t := range tokenCache {
++		if t == token {
++			return true
++		}
++	}
++	return false
++}
+diff --git a/example/service/user_service.java b/example/service/user_service.java
+new file mode 100644
+index 0000000..abcdefg
+--- /dev/null
++++ b/example/service/user_service.java
+@@ -0,0 +1,30 @@
++package com.example.service;
++
++import java.util.*;
++
++public class UserService {
++    private HashMap<String, User> userCache = new HashMap<>();
++    
++    public void addUser(User user) {
++        // 多线程环境下使用非线程安全的集合
++        userCache.put(user.getId(), user);
++    }
++    
++    public List<User> searchUsers(String keyword) {
++        List<User> results = new ArrayList<>();
++        
++        // 嵌套循环 - 性能问题
++        for (User user : userCache.values()) {
++            for (String tag : user.getTags()) {
++                if (tag.contains(keyword)) {
++                    results.add(user);
++                    break;
++                }
++            }
++        }
++        
++        return results;
++    }
++    
++    // TODO: 实现用户删除功能
++}
+diff --git a/example/web/app.js b/example/web/app.js
+new file mode 100644
+index 0000000..9876543
+--- /dev/null
++++ b/example/web/app.js
+@@ -0,0 +1,20 @@
++// XSS 风险示例
++function displayUserInput(input) {
++    // 直接将用户输入插入 HTML
++    document.getElementById('output').innerHTML = input;
++}
++
++// 命令注入风险
++function executeCommand(cmd) {
++    const { exec } = require('child_process');
++    exec(cmd, (error, stdout, stderr) => {
++        if (error) {
++            console.error(`执行错误: ${error}`);
++            return;
++        }
++        console.log(`输出: ${stdout}`);
++    });
++}
++
++// 配置中硬编码的 API 密钥
++const API_KEY = "sk-1234567890abcdefghijklmnopqrstuvwxyz";

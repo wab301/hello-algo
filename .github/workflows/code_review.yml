@@ -1,0 +1,108 @@
+name: Code Review
+
+on:
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: Automated Code Review
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      
+      - name: Run Code Review Tool
+        id: review
+        run: |
+          # 获取 PR 的 diff
+          git fetch origin ${{ github.base_ref }}
+          git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
+          
+          # 运行代码审查工具
+          python tools/code_reviewer.py pr_diff.txt > review_results.json
+          
+          # 检查是否有问题
+          if [ -s review_results.json ]; then
+            echo "issues_found=true" >> $GITHUB_OUTPUT
+          else
+            echo "issues_found=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Upload Review Results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: code-review-results
+          path: review_results.json
+      
+      - name: Comment on PR (if issues found)
+        if: steps.review.outputs.issues_found == 'true'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('review_results.json', 'utf8'));
+            
+            // 按严重程度分组
+            const errors = results.filter(r => r.severity === 'error');
+            const warnings = results.filter(r => r.severity === 'warning');
+            const infos = results.filter(r => r.severity === 'info');
+            
+            // 构建评论内容
+            let comment = '## 🤖 自动代码审查结果\n\n';
+            
+            if (errors.length > 0) {
+              comment += `### ❌ 错误 (${errors.length})\n\n`;
+              errors.forEach(e => {
+                comment += `- **${e.file}:${e.line}**\n`;
+                comment += `  - 问题: ${e.message}\n`;
+                comment += `  - 建议: ${e.suggestion}\n\n`;
+              });
+            }
+            
+            if (warnings.length > 0) {
+              comment += `### ⚠️ 警告 (${warnings.length})\n\n`;
+              warnings.forEach(w => {
+                comment += `- **${w.file}:${w.line}**\n`;
+                comment += `  - 问题: ${w.message}\n`;
+                comment += `  - 建议: ${w.suggestion}\n\n`;
+              });
+            }
+            
+            if (infos.length > 0) {
+              comment += `### ℹ️ 提示 (${infos.length})\n\n`;
+              infos.forEach(i => {
+                comment += `- **${i.file}:${i.line}**\n`;
+                comment += `  - 问题: ${i.message}\n`;
+                comment += `  - 建议: ${i.suggestion}\n\n`;
+              });
+            }
+            
+            comment += '\n---\n';
+            comment += '> 这是自动代码审查工具生成的结果，仅供参考，不能替代人工审查。\n';
+            
+            // 发布评论
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+      
+      - name: Success Message
+        if: steps.review.outputs.issues_found == 'false'
+        run: |
+          echo "✓ 未发现明显问题"
