@@ -175,9 +175,17 @@ class CodeReviewer:
     
     def _check_security_issues(self, file_path: str, line_num: int, content: str):
         """检查安全问题"""
-        # SQL 注入
-        if any(keyword in content.lower() for keyword in ['select', 'insert', 'update', 'delete']):
-            if '+' in content or 'fmt.Sprintf' in content or 'String.format' in content:
+        # SQL 注入 - 检查字符串拼接的 SQL 语句
+        sql_keywords = ['select ', 'insert ', 'update ', 'delete ', 'drop ', 'create table']
+        content_lower = content.lower()
+        has_sql = any(keyword in content_lower for keyword in sql_keywords)
+        # 检查字符串拼接迹象，排除注释
+        has_concat = ('+' in content or 'fmt.Sprintf' in content or 'String.format' in content)
+        is_not_comment = not content.strip().startswith(('/', '#', '*'))
+        
+        if has_sql and has_concat and is_not_comment:
+            # 排除已经使用参数化查询的情况
+            if '?' not in content and 'PreparedStatement' not in content and 'db.Query' not in content:
                 self.comments.append(ReviewComment(
                     file=file_path,
                     line=line_num,
@@ -224,23 +232,15 @@ class CodeReviewer:
         # 循环中的字符串拼接
         if any(keyword in content for keyword in ['for', 'while']):
             if '+=' in content and ('"' in content or "'" in content):
-                self.comments.append(ReviewComment(
-                    file=file_path,
-                    line=line_num,
-                    severity="info",
-                    message="循环中使用字符串拼接可能影响性能",
-                    suggestion="考虑使用 StringBuilder 或类似的高效方式"
-                ))
-        
-        # 嵌套循环
-        if content.count('for') > 1 or content.count('while') > 1:
-            self.comments.append(ReviewComment(
-                file=file_path,
-                line=line_num,
-                severity="info",
-                message="存在嵌套循环，注意时间复杂度",
-                suggestion="评估是否可以优化算法复杂度"
-            ))
+                # 排除注释
+                if not content.strip().startswith(('/', '#', '*')):
+                    self.comments.append(ReviewComment(
+                        file=file_path,
+                        line=line_num,
+                        severity="info",
+                        message="循环中使用字符串拼接可能影响性能",
+                        suggestion="考虑使用 StringBuilder 或类似的高效方式"
+                    ))
         
         # 未关闭的资源
         if any(keyword in content for keyword in ['open(', 'File(', 'Connection', 'Stream']):
@@ -255,16 +255,25 @@ class CodeReviewer:
     
     def _check_code_quality(self, file_path: str, line_num: int, content: str):
         """检查代码质量"""
-        # 魔术数字
-        if re.search(r'\b\d{2,}\b', content) and 'const' not in content and 'final' not in content:
-            if not any(keyword in content for keyword in ['return', 'range', 'len(', 'size()']):
-                self.comments.append(ReviewComment(
-                    file=file_path,
-                    line=line_num,
-                    severity="info",
-                    message="存在魔术数字",
-                    suggestion="将数字提取为有意义的常量"
-                ))
+        # 魔术数字 - 改进检测逻辑
+        # 排除常见的合法数字：0, 1, 2, HTTP状态码, 常见端口等
+        if not content.strip().startswith(('/', '#', '*')):  # 排除注释
+            numbers = re.findall(r'\b(\d{2,})\b', content)
+            for num in numbers:
+                num_int = int(num)
+                # 排除常见的合法数字
+                if num_int not in [0, 1, 2, 10, 100, 200, 201, 204, 301, 302, 400, 401, 403, 404, 500, 
+                                   8080, 3000, 5000, 443, 80]:
+                    if 'const' not in content and 'final' not in content and 'readonly' not in content:
+                        if not any(keyword in content for keyword in ['return', 'range', 'len(', 'size()', 'length', 'count']):
+                            self.comments.append(ReviewComment(
+                                file=file_path,
+                                line=line_num,
+                                severity="info",
+                                message="存在魔术数字",
+                                suggestion="将数字提取为有意义的常量"
+                            ))
+                            break  # 只报告一次
         
         # 过长的行
         if len(content) > 120:
