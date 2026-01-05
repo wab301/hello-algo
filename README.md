@@ -57,6 +57,30 @@
 >
 > **—— 李沐，亚马逊资深首席科学家**
 
+## 开发工具
+
+### 代码审查工具
+
+本项目提供了一个自动化代码审查工具，用于分析代码变更并提供结构化的反馈。工具重点关注：
+
+- 🔍 逻辑正确性
+- ⚡ 并发/性能/内存问题
+- 🔒 安全风险（SQL 注入、XSS、敏感信息泄露等）
+- 📝 代码可维护性
+- ✨ 工程最佳实践
+
+**使用方法：**
+
+```bash
+# 审查当前未提交的更改
+git diff | python tools/code_reviewer.py -
+
+# 审查示例
+python tools/code_reviewer.py tools/example_diff.txt
+```
+
+详细文档请查看 [tools/README.md](tools/README.md) 和 [tools/USAGE.md](tools/USAGE.md)。
+
 ## 贡献
 
 本开源书仍在持续更新之中，欢迎您参与本项目，一同为读者提供更优质的学习内容。
